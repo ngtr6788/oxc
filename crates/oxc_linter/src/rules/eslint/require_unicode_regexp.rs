@@ -3,6 +3,7 @@ use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 
 use crate::{
     AstNode,
@@ -19,20 +20,31 @@ fn require_unicode_regexp_diagnostic(span: Span) -> OxcDiagnostic {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 #[schemars(rename_all = "camelCase")]
-struct ConfigElement0 {
+pub struct RequireUnicodeRegexpConfig {
     require_flag: RequireFlag,
 }
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(untagged, rename_all = "camelCase")]
-enum RequireFlag {
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+pub enum RequireFlag {
     #[default]
     U,
     V,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
-pub struct RequireUnicodeRegexp(ConfigElement0);
+pub struct RequireUnicodeRegexp(RequireUnicodeRegexpConfig);
+
+impl Deref for RequireUnicodeRegexp {
+    type Target = RequireUnicodeRegexpConfig;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 // See <https://github.com/oxc-project/oxc/issues/6050> for documentation details.
 declare_oxc_lint!(
@@ -67,12 +79,16 @@ declare_oxc_lint!(
 
 impl Rule for RequireUnicodeRegexp {
     fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::error::Error> {
+        dbg!(&value);
         Ok(serde_json::from_value::<DefaultRuleConfig<Self>>(value)
             .unwrap_or_default()
             .into_inner())
     }
 
-    fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {}
+    // fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {}
+    fn run_once(&self, ctx: &LintContext) {
+        dbg!(&self.require_flag);
+    }
 }
 
 #[test]
