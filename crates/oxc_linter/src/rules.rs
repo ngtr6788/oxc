@@ -196,6 +196,7 @@ pub(crate) mod eslint {
     pub mod preserve_caught_error;
     pub mod radix;
     pub mod require_await;
+    pub mod require_unicode_regexp;
     pub mod require_yield;
     pub mod sort_imports;
     pub mod sort_keys;
@@ -859,6 +860,7 @@ oxc_macros::declare_all_lint_rules! {
     eslint::preserve_caught_error,
     eslint::radix,
     eslint::require_await,
+    eslint::require_unicode_regexp,
     eslint::require_yield,
     eslint::sort_imports,
     eslint::sort_keys,
