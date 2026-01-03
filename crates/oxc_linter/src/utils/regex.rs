@@ -93,7 +93,7 @@ where
 }
 
 // Accepts both RegExp and globalThis.RegExp
-fn is_regexp_callee<'a>(callee: &'a Expression<'a>, ctx: &'a LintContext<'_>) -> bool {
+pub fn is_regexp_callee<'a>(callee: &'a Expression<'a>, ctx: &'a LintContext<'_>) -> bool {
     if callee.is_global_reference_name("RegExp", ctx.semantic().scoping()) {
         return true;
     }

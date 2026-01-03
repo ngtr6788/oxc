@@ -1,3 +1,8 @@
+use oxc_allocator::Vec;
+use oxc_ast::{
+    AstKind,
+    ast::{Argument, RegExpFlags},
+};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
@@ -7,15 +12,23 @@ use std::ops::Deref;
 
 use crate::{
     AstNode,
+    ast_util::extract_regex_flags,
     context::LintContext,
     fixer::{RuleFix, RuleFixer},
     rule::{DefaultRuleConfig, Rule},
+    utils::is_regexp_callee,
 };
 
-fn require_unicode_regexp_diagnostic(span: Span) -> OxcDiagnostic {
-    // See <https://oxc.rs/docs/contribute/linter/adding-rules.html#diagnostics> for details
-    OxcDiagnostic::warn("Should be an imperative statement about what is wrong.")
-        .with_help("Should be a command-like statement that tells the user how to fix the issue.")
+fn require_unicode_regexp_diagnostic(
+    span: Span,
+    require_flag: Option<RequireFlag>,
+) -> OxcDiagnostic {
+    let flag_str = match require_flag {
+        Some(RequireFlag::V) => "v",
+        _ => "u",
+    };
+    OxcDiagnostic::warn(format!("Use the '{flag_str}' flag"))
+        .with_help(format!("Add the '{flag_str}' flag"))
         .with_label(span)
 }
 
@@ -23,14 +36,13 @@ fn require_unicode_regexp_diagnostic(span: Span) -> OxcDiagnostic {
 #[serde(rename_all = "camelCase")]
 #[schemars(rename_all = "camelCase")]
 pub struct RequireUnicodeRegexpConfig {
-    require_flag: RequireFlag,
+    require_flag: Option<RequireFlag>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[schemars(rename_all = "camelCase")]
 pub enum RequireFlag {
-    #[default]
     U,
     V,
 }
@@ -79,15 +91,81 @@ declare_oxc_lint!(
 
 impl Rule for RequireUnicodeRegexp {
     fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::error::Error> {
-        dbg!(&value);
         Ok(serde_json::from_value::<DefaultRuleConfig<Self>>(value)
             .unwrap_or_default()
             .into_inner())
     }
 
-    // fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {}
-    fn run_once(&self, ctx: &LintContext) {
-        dbg!(&self.require_flag);
+    fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
+        let required_regexp_flag = match self.require_flag {
+            None => RegExpFlags::U | RegExpFlags::V,
+            Some(RequireFlag::U) => RegExpFlags::U,
+            Some(RequireFlag::V) => RegExpFlags::V,
+        };
+        match node.kind() {
+            AstKind::RegExpLiteral(regex) => {
+                let flags = regex.regex.flags;
+                if !flags.intersects(required_regexp_flag) {
+                    ctx.diagnostic(require_unicode_regexp_diagnostic(
+                        regex.span,
+                        self.require_flag,
+                    ));
+                }
+            }
+            AstKind::NewExpression(expr) if is_regexp_callee(&expr.callee, ctx) => {
+                self.validate_flags_in_arguments(
+                    &expr.arguments,
+                    required_regexp_flag,
+                    expr.span,
+                    ctx,
+                );
+            }
+            AstKind::CallExpression(expr) if is_regexp_callee(&expr.callee, ctx) => {
+                self.validate_flags_in_arguments(
+                    &expr.arguments,
+                    required_regexp_flag,
+                    expr.span,
+                    ctx,
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+impl RequireUnicodeRegexp {
+    fn validate_flags_in_arguments(
+        &self,
+        arguments: &Vec<'_, Argument<'_>>,
+        required_regexp_flag: RegExpFlags,
+        span: Span,
+        ctx: &LintContext<'_>,
+    ) {
+        if let Some(Argument::SpreadElement(..)) = arguments.first() {
+            return;
+        }
+
+        match arguments.get(1) {
+            None => {
+                ctx.diagnostic(require_unicode_regexp_diagnostic(span, self.require_flag));
+            }
+            Some(Argument::StringLiteral(..) | Argument::TemplateLiteral(..)) => {
+                match extract_regex_flags(arguments) {
+                    None => {
+                        ctx.diagnostic(require_unicode_regexp_diagnostic(span, self.require_flag));
+                    }
+                    Some(flags) => {
+                        if !flags.intersects(required_regexp_flag) {
+                            ctx.diagnostic(require_unicode_regexp_diagnostic(
+                                span,
+                                self.require_flag,
+                            ));
+                        }
+                    }
+                };
+            }
+            _ => {}
+        };
     }
 }
 
